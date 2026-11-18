@@ -40,7 +40,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.spool.data.Channel
 import app.spool.data.Media
@@ -230,8 +229,6 @@ fun MediaCard(
         Text(
             text = media.title,
             style = MaterialTheme.typography.titleSmall,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
             color = if (progress?.finished == true) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.padding(horizontal = 4.dp),
         )
@@ -240,8 +237,6 @@ fun MediaCard(
                 text = media.group,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
             )
         }
@@ -304,8 +299,6 @@ fun ChannelTile(
         Text(
             text = channel.name,
             style = MaterialTheme.typography.titleSmall,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 4.dp),
         )
         Text(

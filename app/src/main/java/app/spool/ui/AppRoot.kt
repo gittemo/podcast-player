@@ -47,7 +47,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -231,8 +230,6 @@ fun AppRoot(controller: MediaController?) {
                 Text(
                     m.title,
                     style = MaterialTheme.typography.titleMedium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
                 )
                 val itemColors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -326,8 +323,6 @@ fun AppRoot(controller: MediaController?) {
                 Text(
                     ch.name,
                     style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
                 )
                 val itemColors = ListItemDefaults.colors(containerColor = Color.Transparent)
