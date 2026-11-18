@@ -59,6 +59,9 @@ fun Thumb(
     BoxWithConstraints(modifier) {
         val px = with(LocalDensity.current) { maxWidth.roundToPx() }
         val bitmap by produceState(initialValue = media?.let { thumbs.cached(it, px) }, media?.id, px) {
+            // produceState keeps the previous value when its keys change: reset it, or a
+            // reused slot (mini player, player) would keep showing the previous file's cover.
+            value = media?.let { thumbs.cached(it, px) }
             if (media != null && value == null) value = thumbs.load(media, px)
         }
         val bmp = bitmap
