@@ -3,7 +3,7 @@
 A simple, fast, offline player for the audio and video you download with Seal (or anything else).
 
 - Opens straight to a grid of channels, grouped by the artist tag yt-dlp writes (the channel name)
-- Channel pictures: fetched once from YouTube on request, or picked from your gallery
+- Channel pictures: fetched quietly from YouTube in the background (failures retried daily), or picked from your gallery
 - Remembers your position in every file
 - Search, filters (audio / video / unplayed / in progress), rename, delete
 - Audio and video in the same app: only the player screen changes

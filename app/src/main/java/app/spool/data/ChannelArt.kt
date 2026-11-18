@@ -43,6 +43,10 @@ class ChannelArt(private val context: Context, private val scope: CoroutineScope
     private val _status = MutableStateFlow<String?>(null)
     val status: StateFlow<String?> = _status.asStateFlow()
     private var bulkJob: Job? = null
+    private var bulkIsAuto = false
+
+    /** Channel name -> time of the last failed automatic fetch. */
+    private val attempts = context.getSharedPreferences("channel_art_attempts", Context.MODE_PRIVATE)
 
     suspend fun load(name: String, widthPx: Int): ImageBitmap? = withContext(Dispatchers.IO) {
         val version = _versions.value[name] ?: return@withContext null
@@ -86,13 +90,15 @@ class ChannelArt(private val context: Context, private val scope: CoroutineScope
         }
     }
 
-    /** Fetch pictures for every channel that doesn't have one yet. Runs in the background. */
+    /** Fetch pictures for every channel that doesn't have one yet, reporting progress. */
     fun fetchMissing(items: List<Media>) {
-        if (bulkJob?.isActive == true) return
+        if (bulkJob?.isActive == true) {
+            if (!bulkIsAuto) return
+            bulkJob?.cancel() // the user asked: replace the silent background run
+        }
+        bulkIsAuto = false
         bulkJob = scope.launch {
-            val missing = items.groupBy { it.group }
-                .filter { (name, _) -> name != "Unsorted" && _versions.value[name] == null }
-                .map { (name, list) -> Channel(name, list) }
+            val missing = missingChannels(items, respectBackoff = false)
             if (missing.isEmpty()) {
                 _status.value = "Every channel already has a picture"
                 return@launch
@@ -100,11 +106,37 @@ class ChannelArt(private val context: Context, private val scope: CoroutineScope
             var ok = 0
             missing.forEachIndexed { i, channel ->
                 _status.value = "Getting pictures… ${i + 1} of ${missing.size}"
-                if (fetchFromYouTube(channel).isSuccess) ok++
+                if (fetchAndRecord(channel)) ok++
             }
             _status.value = "Got $ok of ${missing.size} channel pictures" +
-                if (ok < missing.size) ". The rest have no YouTube link in their files." else ""
+                if (ok < missing.size) ". The rest have no YouTube link in their files, or YouTube couldn't be reached." else ""
         }
+    }
+
+    /**
+     * Silent version for startup and new channels: no status, no errors. A channel that
+     * failed isn't retried for a day, so the app doesn't hit YouTube on every launch.
+     */
+    fun autoFetch(items: List<Media>) {
+        if (bulkJob?.isActive == true) return
+        bulkIsAuto = true
+        bulkJob = scope.launch {
+            for (channel in missingChannels(items, respectBackoff = true)) fetchAndRecord(channel)
+        }
+    }
+
+    private fun missingChannels(items: List<Media>, respectBackoff: Boolean): List<Channel> {
+        val now = System.currentTimeMillis()
+        return items.groupBy { it.group }
+            .filter { (name, _) -> name != Library.UNSORTED && _versions.value[name] == null }
+            .filter { (name, _) -> !respectBackoff || now - attempts.getLong(name, 0L) > RETRY_AFTER_MS }
+            .map { (name, list) -> Channel(name, list) }
+    }
+
+    private suspend fun fetchAndRecord(channel: Channel): Boolean {
+        val ok = fetchFromYouTube(channel).isSuccess
+        attempts.edit { if (ok) remove(channel.name) else putLong(channel.name, System.currentTimeMillis()) }
+        return ok
     }
 
     private fun save(name: String, bytes: ByteArray) {
@@ -158,7 +190,8 @@ class ChannelArt(private val context: Context, private val scope: CoroutineScope
     }
 
     companion object {
-        private val ogImage = Regex("""<meta\s+property="og:image"\s+content="([^"]+)"""")
+        private const val RETRY_AFTER_MS = 24L * 60 * 60 * 1000
+        private val ogImage =Regex("""<meta\s+property="og:image"\s+content="([^"]+)"""")
         private const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36"
     }

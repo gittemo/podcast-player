@@ -11,6 +11,9 @@ import app.spool.data.Thumbnails
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
 class SpoolApp : Application() {
     lateinit var graph: AppGraph
@@ -31,6 +34,18 @@ class AppGraph(app: Application) {
     val thumbnails = Thumbnails(app)
     val channelArt = ChannelArt(app, scope)
     val fileOps = FileOps(app, library, progress)
+
+    init {
+        // Quietly fetch YouTube pictures for channels without one: at startup, and again
+        // whenever the library changes (e.g. a new channel was downloaded).
+        scope.launch {
+            library.items.collectLatest { items ->
+                if (items.isEmpty()) return@collectLatest
+                delay(3_000) // let the UI settle and artist tags resolve first
+                channelArt.autoFetch(items)
+            }
+        }
+    }
 }
 
 val Context.graph: AppGraph

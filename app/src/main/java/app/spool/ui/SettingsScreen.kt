@@ -101,9 +101,9 @@ fun SettingsScreen(root: String, items: List<Media>, bottomPadding: Dp, onBack: 
             Spacer(Modifier.height(12.dp))
             Text("Channel pictures", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
-                "Fetches each channel's picture from YouTube once, using the video link Seal saves in the files. " +
-                    "This is the only thing that uses the internet. You can also set a picture yourself by " +
-                    "long-pressing a channel.",
+                "Spool quietly fetches each channel's picture from YouTube once, using the video link Seal saves " +
+                    "in the files. It's the only thing that uses the internet. Channels that fail are retried the " +
+                    "next day, or now with the button below. You can also set a picture yourself by long-pressing a channel.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
