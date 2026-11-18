@@ -46,7 +46,10 @@ class Library(
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
 
-    private val artistCache = context.getSharedPreferences("artist_cache", Context.MODE_PRIVATE)
+    // v2: Matroska (.webm/.mkv) tags are read now. The old cache remembered "no artist" for
+    // those files, so start over once.
+    private val artistCache = context.getSharedPreferences("artist_cache_v2", Context.MODE_PRIVATE)
+        .also { context.deleteSharedPreferences("artist_cache") }
 
     private val audioUri: Uri = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
     private val videoUri: Uri = MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)

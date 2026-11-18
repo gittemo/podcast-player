@@ -74,4 +74,10 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:$media3")
     implementation("androidx.media3:media3-session:$media3")
     implementation("androidx.media3:media3-ui-compose:$media3")
+    implementation("androidx.media3:media3-inspector:$media3")
+    // Used directly by TagReader (metadata entry types).
+    implementation("androidx.media3:media3-extractor:$media3")
+    implementation("androidx.media3:media3-container:$media3")
+
+    testImplementation("junit:junit:4.13.2")
 }
