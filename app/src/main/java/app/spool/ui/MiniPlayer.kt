@@ -1,11 +1,13 @@
 package app.spool.ui
 
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -47,10 +49,26 @@ fun MiniPlayer(
     ) {
         Column(Modifier.clip(shape).clickable(onClick = onOpen)) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(10.dp)) {
-                Thumb(media, Modifier.size(56.dp).clip(RoundedCornerShape(14.dp)))
+                // Cover at its own shape (fixed height), clamped so very wide/tall art stays tidy.
+                CoverArt(
+                    media,
+                    Modifier.height(48.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    sizePx = 200,
+                    matchHeightFirst = true,
+                    minAspect = 9f / 16f,
+                    maxAspect = 16f / 9f,
+                    loadingAspect = 1f,
+                )
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(media.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    // One line that scrolls when it's too long, so the whole title is readable.
+                    Text(
+                        media.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1,
+                        modifier = Modifier.basicMarquee(),
+                    )
                     Text(
                         media.group,
                         style = MaterialTheme.typography.labelMedium,
@@ -60,12 +78,11 @@ fun MiniPlayer(
                     )
                 }
                 Spacer(Modifier.width(8.dp))
-                val playing = isCurrent && state.isPlaying
-                FilledIconButton(onClick = onToggle, modifier = Modifier.size(52.dp)) {
+                val playing = isCurrent && !state.showPlay
+                FilledIconButton(onClick = onToggle, modifier = Modifier.size(48.dp)) {
                     Icon(
                         if (playing) AppIcons.Pause else AppIcons.Play,
                         contentDescription = if (playing) "Pause" else "Play",
-                        modifier = Modifier.size(28.dp),
                     )
                 }
             }

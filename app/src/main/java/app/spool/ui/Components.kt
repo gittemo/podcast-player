@@ -34,6 +34,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -69,6 +70,55 @@ fun Thumb(
             Image(bitmap = bmp, contentDescription = null, contentScale = contentScale, modifier = Modifier.fillMaxSize())
         } else {
             Placeholder(placeholderLabel, media?.isVideo == true, Modifier.fillMaxSize())
+        }
+    }
+}
+
+private sealed interface Cover {
+    data object Loading : Cover
+    data object None : Cover
+    class Loaded(val bitmap: ImageBitmap) : Cover
+}
+
+/**
+ * Cover art at its own aspect ratio: no forced square and no empty space around it. It
+ * takes the largest size that fits the space it's given (or, with [matchHeightFirst], the
+ * width that matches a fixed height). Files without art get a square placeholder.
+ *
+ * @param loadingAspect space to hold while loading; null holds none.
+ */
+@Composable
+fun CoverArt(
+    media: Media,
+    modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(16.dp),
+    sizePx: Int = 960,
+    matchHeightFirst: Boolean = false,
+    minAspect: Float = 0.1f,
+    maxAspect: Float = 10f,
+    loadingAspect: Float? = null,
+) {
+    val thumbs = LocalContext.current.graph.thumbnails
+    val initial = thumbs.cached(media, sizePx)?.let { Cover.Loaded(it) } ?: Cover.Loading
+    val cover by produceState<Cover>(initialValue = initial, media.id, sizePx) {
+        value = thumbs.cached(media, sizePx)?.let { Cover.Loaded(it) } ?: Cover.Loading
+        if (value == Cover.Loading) value = thumbs.load(media, sizePx)?.let { Cover.Loaded(it) } ?: Cover.None
+    }
+    when (val c = cover) {
+        Cover.Loading -> if (loadingAspect != null) {
+            Box(modifier.aspectRatio(loadingAspect, matchHeightFirst).clip(shape))
+        }
+
+        Cover.None -> Placeholder(media.group, media.isVideo, modifier.aspectRatio(1f, matchHeightFirst).clip(shape))
+
+        is Cover.Loaded -> {
+            val aspect = (c.bitmap.width.toFloat() / c.bitmap.height.coerceAtLeast(1)).coerceIn(minAspect, maxAspect)
+            Image(
+                bitmap = c.bitmap,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = modifier.aspectRatio(aspect, matchHeightFirst).clip(shape),
+            )
         }
     }
 }

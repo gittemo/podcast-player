@@ -1,3 +1,5 @@
+@file:androidx.annotation.OptIn(UnstableApi::class)
+
 package app.spool.ui
 
 import androidx.compose.runtime.Composable
@@ -11,6 +13,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.media3.common.C
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.common.util.Util
 import app.spool.data.Media
 import app.spool.data.Progress
 import app.spool.playback.resumePositionMs
@@ -21,6 +25,8 @@ import kotlinx.coroutines.delay
 class PlayerUiState {
     var mediaId by mutableStateOf<String?>(null)
     var isPlaying by mutableStateOf(false)
+    /** Whether the play/pause button should show Play (Media3's rule: covers buffering and focus loss). */
+    var showPlay by mutableStateOf(true)
     var isBuffering by mutableStateOf(false)
     var ended by mutableStateOf(false)
     var positionMs by mutableLongStateOf(0L)
@@ -35,11 +41,13 @@ fun rememberPlayerUiState(player: Player?): PlayerUiState {
     DisposableEffect(player) {
         if (player == null) {
             state.isPlaying = false
+            state.showPlay = true
             return@DisposableEffect onDispose { }
         }
         fun sync() {
             state.mediaId = player.currentMediaItem?.mediaId
             state.isPlaying = player.isPlaying
+            state.showPlay = Util.shouldShowPlayButton(player)
             state.isBuffering = player.playbackState == Player.STATE_BUFFERING
             state.ended = player.playbackState == Player.STATE_ENDED
             state.positionMs = player.currentPosition.coerceAtLeast(0L)
@@ -79,12 +87,7 @@ fun Player.playMedia(media: Media, progress: Progress?) {
     play()
 }
 
+/** Play/pause like Media3's own buttons: also prepares an idle player and restarts an ended one. */
 fun Player.togglePlay() {
-    if (isPlaying) {
-        pause()
-    } else {
-        if (playbackState == Player.STATE_ENDED) seekTo(0)
-        if (playbackState == Player.STATE_IDLE) prepare()
-        play()
-    }
+    Util.handlePlayPauseButtonAction(this)
 }

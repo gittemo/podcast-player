@@ -1,8 +1,9 @@
-@file:OptIn(UnstableApi::class)
+@file:androidx.annotation.OptIn(UnstableApi::class)
 
 package app.spool.ui
 
 import android.content.res.Configuration
+import android.text.format.Formatter
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -13,23 +14,28 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -39,27 +45,35 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.ui.compose.PlayerSurface
+import androidx.media3.ui.compose.ContentFrame
+import androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW
 import app.spool.data.Media
+import app.spool.data.TagReader
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 
 private val speeds = listOf(0.8f, 1f, 1.2f, 1.5f, 1.75f, 2f)
 
@@ -83,74 +97,73 @@ fun PlayerScreen(
 
 @Composable
 private fun PortraitPlayer(media: Media, player: Player?, state: PlayerUiState, onClose: () -> Unit) {
+    var showInfo by rememberSaveable(media.key) { mutableStateOf(false) }
     Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxSize()) {
         Column(
             Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
+                .safeDrawingPadding()
                 .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                 IconButton(onClick = onClose) { Icon(AppIcons.Down, contentDescription = "Close player") }
                 Spacer(Modifier.weight(1f))
+                IconButton(onClick = { showInfo = true }) { Icon(AppIcons.Info, contentDescription = "File details") }
                 SpeedButton(player, state)
             }
 
-            Spacer(Modifier.weight(1f))
+            // Everything below is centred as a group; the picture takes whatever height is
+            // left after the text and controls, at its own aspect ratio.
+            Column(
+                Modifier.weight(1f).fillMaxWidth(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                val shape = RoundedCornerShape(20.dp)
+                Box(
+                    Modifier.weight(1f, fill = false).fillMaxWidth().padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (media.isVideo && player != null) {
+                        val aspect = if (state.videoAspect > 0f) state.videoAspect else 16f / 9f
+                        Box(Modifier.aspectRatio(aspect).clip(shape).background(Color.Black)) {
+                            // TextureView: a SurfaceView ignores the rounded clip.
+                            ContentFrame(
+                                player = player,
+                                modifier = Modifier.fillMaxSize(),
+                                surfaceType = SURFACE_TYPE_TEXTURE_VIEW,
+                            )
+                        }
+                    } else {
+                        CoverArt(media, shape = shape, sizePx = 960)
+                    }
+                }
 
-            val artShape = RoundedCornerShape(24.dp)
-            if (media.isVideo && player != null) {
-                val aspect = if (state.videoAspect > 0f) state.videoAspect else 16f / 9f
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(aspect)
-                        .clip(artShape)
-                        .background(Color.Black),
-                ) {
-                    PlayerSurface(player = player, modifier = Modifier.fillMaxSize())
-                }
-            } else {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(1f)
-                        .clip(artShape)
-                        .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-                ) {
-                    Thumb(media, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
-                }
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = media.title,
+                    style = MaterialTheme.typography.titleLarge,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = media.group,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    textAlign = TextAlign.Center,
+                )
+
+                Spacer(Modifier.height(16.dp))
+                SeekBar(player, state)
+
+                Spacer(Modifier.height(8.dp))
+                Controls(player, state)
+                Spacer(Modifier.height(16.dp))
             }
-
-            Spacer(Modifier.height(28.dp))
-            Text(
-                text = media.title,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = media.group,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-
-            Spacer(Modifier.height(20.dp))
-            SeekBar(player, state)
-
-            Spacer(Modifier.height(12.dp))
-            BigControls(player, state)
-
-            Spacer(Modifier.weight(1f))
         }
     }
+    if (showInfo) MediaInfoSheet(media, onDismiss = { showInfo = false })
 }
 
 @Composable
@@ -180,42 +193,50 @@ private fun SeekBar(player: Player?, state: PlayerUiState, light: Boolean = fals
             enabled = state.durationMs > 0,
         )
         Row(Modifier.fillMaxWidth()) {
-            Text(formatDuration((shown * duration).toLong()), style = MaterialTheme.typography.labelLarge, color = textColor)
+            Text(formatDuration((shown * duration).toLong()), style = MaterialTheme.typography.labelMedium, color = textColor)
             Spacer(Modifier.weight(1f))
             val remaining = ((1f - shown) * duration / state.speed.coerceAtLeast(0.1f)).toLong()
-            Text("-" + formatDuration(remaining), style = MaterialTheme.typography.labelLarge, color = textColor)
+            Text("-" + formatDuration(remaining), style = MaterialTheme.typography.labelMedium, color = textColor)
         }
     }
 }
 
+/** Back 15 s · play/pause · forward 30 s. [overlay] is for white controls on top of video. */
 @Composable
-private fun BigControls(player: Player?, state: PlayerUiState) {
+private fun Controls(player: Player?, state: PlayerUiState, overlay: Boolean = false) {
     Row(
-        horizontalArrangement = Arrangement.spacedBy(28.dp),
+        horizontalArrangement = Arrangement.spacedBy(24.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SkipButton(label = "15", icon = AppIcons.Rewind, description = "Back 15 seconds") { player?.seekBack() }
-        FilledIconButton(
-            onClick = { player?.togglePlay() },
-            modifier = Modifier.size(96.dp),
-            shape = RoundedCornerShape(32.dp),
-        ) {
-            Icon(
-                if (state.isPlaying) AppIcons.Pause else AppIcons.Play,
-                contentDescription = if (state.isPlaying) "Pause" else "Play",
-                modifier = Modifier.size(48.dp),
-            )
+        SkipButton("15", AppIcons.Rewind, "Back 15 seconds", overlay) { player?.seekBack() }
+        val icon = if (state.showPlay) AppIcons.Play else AppIcons.Pause
+        val description = if (state.showPlay) "Play" else "Pause"
+        if (overlay) {
+            IconButton(
+                onClick = { player?.togglePlay() },
+                colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White),
+                modifier = Modifier.size(64.dp),
+            ) { Icon(icon, contentDescription = description, modifier = Modifier.size(40.dp)) }
+        } else {
+            FilledIconButton(onClick = { player?.togglePlay() }, modifier = Modifier.size(64.dp)) {
+                Icon(icon, contentDescription = description, modifier = Modifier.size(32.dp))
+            }
         }
-        SkipButton(label = "30", icon = AppIcons.Forward, description = "Forward 30 seconds") { player?.seekForward() }
+        SkipButton("30", AppIcons.Forward, "Forward 30 seconds", overlay) { player?.seekForward() }
     }
 }
 
 @Composable
-private fun SkipButton(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, description: String, onClick: () -> Unit) {
-    FilledTonalIconButton(onClick = onClick, modifier = Modifier.size(72.dp), shape = RoundedCornerShape(24.dp)) {
+private fun SkipButton(label: String, icon: ImageVector, description: String, overlay: Boolean, onClick: () -> Unit) {
+    val colors = if (overlay) {
+        IconButtonDefaults.iconButtonColors(contentColor = Color.White)
+    } else {
+        IconButtonDefaults.iconButtonColors()
+    }
+    IconButton(onClick = onClick, colors = colors, modifier = Modifier.size(56.dp)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(icon, contentDescription = description, modifier = Modifier.size(28.dp))
-            Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Icon(icon, contentDescription = description)
+            Text(label, style = MaterialTheme.typography.labelSmall)
         }
     }
 }
@@ -248,44 +269,92 @@ private fun FullscreenVideo(media: Media, player: Player, state: PlayerUiState) 
             ) { controlsVisible = !controlsVisible },
         contentAlignment = Alignment.Center,
     ) {
-        val aspect = if (state.videoAspect > 0f) state.videoAspect else 16f / 9f
-        Box(Modifier.aspectRatio(aspect, matchHeightConstraintsFirst = true)) {
-            PlayerSurface(player = player, modifier = Modifier.fillMaxSize())
-        }
+        // ContentFrame keeps the video's aspect ratio and shows black until the first frame.
+        ContentFrame(player = player, modifier = Modifier.fillMaxSize())
         AnimatedVisibility(visible = controlsVisible, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f))) {
                 Text(
                     media.title,
                     color = Color.White,
                     style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.align(Alignment.TopStart).padding(24.dp),
+                    modifier = Modifier.align(Alignment.TopStart).safeDrawingPadding().padding(24.dp),
                 )
-                Row(
-                    Modifier.align(Alignment.Center),
-                    horizontalArrangement = Arrangement.spacedBy(48.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    val colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White)
-                    IconButton(onClick = { player.seekBack() }, colors = colors, modifier = Modifier.size(64.dp)) {
-                        Icon(AppIcons.Rewind, contentDescription = "Back 15 seconds", modifier = Modifier.size(40.dp))
-                    }
-                    IconButton(onClick = { player.togglePlay() }, colors = colors, modifier = Modifier.size(88.dp)) {
-                        Icon(
-                            if (state.isPlaying) AppIcons.Pause else AppIcons.Play,
-                            contentDescription = if (state.isPlaying) "Pause" else "Play",
-                            modifier = Modifier.size(64.dp),
-                        )
-                    }
-                    IconButton(onClick = { player.seekForward() }, colors = colors, modifier = Modifier.size(64.dp)) {
-                        Icon(AppIcons.Forward, contentDescription = "Forward 30 seconds", modifier = Modifier.size(40.dp))
-                    }
+                Box(Modifier.align(Alignment.Center)) {
+                    Controls(player, state, overlay = true)
                 }
-                Box(Modifier.align(Alignment.BottomCenter).padding(horizontal = 32.dp, vertical = 16.dp)) {
+                Box(Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(horizontal = 32.dp, vertical = 16.dp)) {
                     SeekBar(player, state, light = true)
                 }
             }
         }
     }
+}
+
+/** Everything known about the file: what Android indexed, its streams and every tag in it. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MediaInfoSheet(media: Media, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    // null while reading.
+    val tags by produceState<TagReader.Tags?>(initialValue = null, media.key) {
+        value = withContext(Dispatchers.IO) { TagReader.read(context, media.uri, withStreams = true) } ?: TagReader.Tags.EMPTY
+    }
+    val file = remember(media) {
+        buildList {
+            add("Title" to media.title)
+            add("Channel" to media.group)
+            add("Type" to if (media.isVideo) "Video" else "Audio")
+            if (media.durationMs > 0) add("Duration" to formatDuration(media.durationMs))
+            add("Size" to Formatter.formatFileSize(context, media.sizeBytes))
+            add(
+                "Added" to Instant.ofEpochSecond(media.dateAdded).atZone(ZoneId.systemDefault())
+                    .format(DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM)),
+            )
+            add("File name" to media.fileName)
+            add("Folder" to media.folder)
+        }
+    }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        LazyColumn(contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 24.dp)) {
+            item { Text("Details", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 8.dp)) }
+            items(file) { (label, value) -> InfoRow(label, value) }
+
+            val read = tags
+            if (read != null && read.streams.isNotEmpty()) {
+                item { InfoSection("Streams") }
+                items(read.streams) { line ->
+                    Text(line, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 4.dp))
+                }
+            }
+
+            item { InfoSection("Tags in the file") }
+            when {
+                read == null -> item { InfoNote("Reading tags…") }
+                read.entries.isEmpty() -> item { InfoNote("No tags found in this file.") }
+                else -> items(read.entries) { (label, value) -> InfoRow(label, value) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InfoSection(title: String) {
+    Column(Modifier.padding(top = 16.dp)) {
+        HorizontalDivider()
+        Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
+    }
+}
+
+@Composable
+private fun InfoRow(label: String, value: String) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // Selectable, so links and descriptions can be copied.
+        SelectionContainer { Text(value, style = MaterialTheme.typography.bodyMedium) }
+    }
+}
+
+@Composable
+private fun InfoNote(text: String) {
+    Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
