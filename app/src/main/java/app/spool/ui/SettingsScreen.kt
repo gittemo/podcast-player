@@ -1,5 +1,7 @@
 package app.spool.ui
 
+import android.content.pm.PackageManager
+import android.os.Build
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings as AndroidSettings
@@ -28,6 +30,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -126,9 +129,17 @@ fun SettingsScreen(root: String, items: List<Media>, bottomPadding: Dp, onBack: 
             }) { Text("Open app info") }
 
             Spacer(Modifier.height(24.dp))
-            val version = runCatching {
-                context.packageManager.getPackageInfo(context.packageName, 0).versionName
-            }.getOrNull() ?: "?"
+            val version = remember {
+                runCatching {
+                    val pm = context.packageManager
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        pm.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(0)).versionName
+                    } else {
+                        @Suppress("DEPRECATION")
+                        pm.getPackageInfo(context.packageName, 0).versionName
+                    }
+                }.getOrNull() ?: "?"
+            }
             Text(
                 "Spool $version · offline, no accounts, no tracking",
                 style = MaterialTheme.typography.labelMedium,

@@ -41,6 +41,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -88,6 +89,8 @@ fun AppRoot(controller: MediaController?) {
     val artVersions by g.channelArt.versions.collectAsStateWithLifecycle()
     val ps = rememberPlayerUiState(controller)
     val scope = rememberCoroutineScope()
+    // The activity builds a new controller on every onStart; callbacks always use the latest.
+    val currentController by rememberUpdatedState(controller)
 
     var stack by remember { mutableStateOf<List<Screen>>(listOf(Screen.Home)) }
     var playerOpen by rememberSaveable { mutableStateOf(false) }
@@ -127,7 +130,7 @@ fun AppRoot(controller: MediaController?) {
     }
 
     fun play(m: Media) {
-        val c = controller
+        val c = currentController
         if (c == null) {
             Toast.makeText(context, "Player is starting, try again", Toast.LENGTH_SHORT).show()
             return
@@ -194,7 +197,7 @@ fun AppRoot(controller: MediaController?) {
             }
         }
 
-        if (showMini && miniMedia != null) {
+        if (showMini) {
             val isCurrent = current != null
             MiniPlayer(
                 media = miniMedia,
@@ -202,7 +205,7 @@ fun AppRoot(controller: MediaController?) {
                 isCurrent = isCurrent,
                 savedProgress = progress[miniMedia.key],
                 onOpen = { if (isCurrent) playerOpen = true else play(miniMedia) },
-                onToggle = { if (isCurrent) controller?.togglePlay() else play(miniMedia) },
+                onToggle = { if (isCurrent) currentController?.togglePlay() else play(miniMedia) },
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
@@ -296,7 +299,7 @@ fun AppRoot(controller: MediaController?) {
             confirmButton = {
                 TextButton(onClick = {
                     deleteTarget = null
-                    val c = controller
+                    val c = currentController
                     if (c != null && c.currentMediaItem?.mediaId == m.key) {
                         c.stop()
                         c.clearMediaItems()

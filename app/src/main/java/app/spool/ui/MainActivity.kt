@@ -9,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import app.spool.playback.PlaybackService
@@ -31,19 +32,38 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        connect()
+    }
+
+    override fun onStop() {
+        disconnect()
+        super.onStop()
+    }
+
+    // Media3's recommended lifecycle: connect while the UI is visible, release when it isn't.
+    private fun connect() {
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
-        val future = MediaController.Builder(this, token).buildAsync()
+        val future = MediaController.Builder(this, token)
+            .setListener(object : MediaController.Listener {
+                // The session went away (e.g. the service was killed): reconnect if still visible.
+                override fun onDisconnected(controller: MediaController) {
+                    if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                        disconnect()
+                        connect()
+                    }
+                }
+            })
+            .buildAsync()
         controllerFuture = future
         future.addListener(
-            { controller = runCatching { future.get() }.getOrNull() },
+            { if (controllerFuture === future) controller = runCatching { future.get() }.getOrNull() },
             ContextCompat.getMainExecutor(this),
         )
     }
 
-    override fun onStop() {
+    private fun disconnect() {
         controller = null
         controllerFuture?.let { MediaController.releaseFuture(it) }
         controllerFuture = null
-        super.onStop()
     }
 }
