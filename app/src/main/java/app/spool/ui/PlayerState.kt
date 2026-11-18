@@ -10,11 +10,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.media3.common.C
-import androidx.media3.common.MediaItem
-import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import app.spool.data.Media
 import app.spool.data.Progress
+import app.spool.playback.resumePositionMs
+import app.spool.playback.toMediaItem
 import kotlinx.coroutines.delay
 
 /** Snapshot of the player for the UI. Only the composables that read a field recompose. */
@@ -74,22 +74,7 @@ fun Player.playMedia(media: Media, progress: Progress?) {
         play()
         return
     }
-    val start = when {
-        progress == null || progress.finished -> 0L
-        else -> (progress.positionMs - 2_000).coerceAtLeast(0L) // a little overlap for context
-    }
-    val item = MediaItem.Builder()
-        .setMediaId(media.key)
-        .setUri(media.uri)
-        .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(media.uri).build())
-        .setMediaMetadata(
-            MediaMetadata.Builder()
-                .setTitle(media.title)
-                .setArtist(media.group)
-                .build(),
-        )
-        .build()
-    setMediaItem(item, start)
+    setMediaItem(media.toMediaItem(), resumePositionMs(progress))
     prepare()
     play()
 }

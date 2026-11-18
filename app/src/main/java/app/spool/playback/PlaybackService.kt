@@ -1,4 +1,4 @@
-@file:OptIn(UnstableApi::class)
+@file:androidx.annotation.OptIn(UnstableApi::class)
 
 package app.spool.playback
 
@@ -19,12 +19,14 @@ import app.spool.ui.MainActivity
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.SettableFuture
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.MainScope
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Owns the player so playback continues with the screen off or the app closed, and
@@ -33,7 +35,6 @@ import kotlinx.coroutines.launch
 class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
     private lateinit var player: ExoPlayer
-    private val scope = MainScope()
     private var ticker: Job? = null
 
     // Last known position of the current item, so it can be saved even after the
@@ -79,7 +80,9 @@ class PlaybackService : MediaSessionService() {
             .setSlots(CommandButton.SLOT_FORWARD)
             .build()
 
-        session = MediaSession.Builder(this, player)
+        // The session (notification, lock screen, Bluetooth, car, watch) talks to SpoolPlayer,
+        // which turns next/previous into forward/back.
+        session = MediaSession.Builder(this, SpoolPlayer(player))
             .setSessionActivity(openApp)
             .setMediaButtonPreferences(ImmutableList.of(back, forward))
             .setCallback(callback)
@@ -90,15 +93,12 @@ class PlaybackService : MediaSessionService() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         saveCurrent()
-        val p = session?.player
-        if (p == null || !p.playWhenReady || p.mediaItemCount == 0 || p.playbackState == Player.STATE_ENDED) {
-            stopSelf()
-        }
+        // Swiping the app away keeps playing audio; otherwise there's nothing to keep alive.
+        if (!isPlaybackOngoing) stopSelf()
     }
 
     override fun onDestroy() {
         saveCurrent()
-        scope.cancel()
         session?.run {
             player.release()
             release()
@@ -119,6 +119,34 @@ class PlaybackService : MediaSessionService() {
                 if (uri != null) item.buildUpon().setUri(uri).build() else item
             }.toMutableList()
             return Futures.immediateFuture(resolved)
+        }
+
+        /**
+         * "Play" from headphones or Bluetooth after the service was stopped (or System UI's
+         * resume card): pick up the last unfinished file where it was left.
+         */
+        override fun onPlaybackResumption(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            isForPlayback: Boolean,
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            val result = SettableFuture.create<MediaSession.MediaItemsWithStartPosition>()
+            lifecycleScope.launch {
+                val g = graph
+                val items = withTimeoutOrNull(5_000) {
+                    g.progress.loaded.first { it }
+                    g.library.loaded.first { it }
+                    g.library.items.value
+                }
+                val media = items?.let { list -> g.progress.lastUnfinished(list.associateBy { it.key }) }
+                if (media == null) {
+                    result.setException(UnsupportedOperationException("Nothing to resume"))
+                } else {
+                    val start = resumePositionMs(g.progress[media.key])
+                    result.set(MediaSession.MediaItemsWithStartPosition(listOf(media.toMediaItem()), 0, start))
+                }
+            }
+            return result
         }
     }
 
@@ -164,7 +192,7 @@ class PlaybackService : MediaSessionService() {
 
     private fun startTicker() {
         ticker?.cancel()
-        ticker = scope.launch {
+        ticker = lifecycleScope.launch {
             var n = 0
             while (isActive) {
                 track()

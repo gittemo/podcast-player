@@ -23,12 +23,24 @@ class ProgressStore(context: Context, private val scope: CoroutineScope) {
     private val _all = MutableStateFlow<Map<String, Progress>>(emptyMap())
     val all: StateFlow<Map<String, Progress>> = _all.asStateFlow()
 
+    private val _loaded = MutableStateFlow(false)
+    /** True once the saved progress has been read from disk. */
+    val loaded: StateFlow<Boolean> = _loaded.asStateFlow()
+
     init {
         scope.launch(writer) {
-            val loaded = readAll()
-            _all.update { loaded + it } // anything saved before loading finished wins
+            val saved = readAll()
+            _all.update { saved + it } // anything saved before loading finished wins
+            _loaded.value = true
         }
     }
+
+    /** The most recently played file that isn't finished, among [candidates]. */
+    fun lastUnfinished(candidates: Map<String, Media>): Media? =
+        _all.value.entries
+            .filter { !it.value.finished && candidates.containsKey(it.key) }
+            .maxByOrNull { it.value.lastPlayed }
+            ?.let { candidates[it.key] }
 
     operator fun get(key: String): Progress? = _all.value[key]
 
