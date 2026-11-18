@@ -17,14 +17,16 @@ android {
         versionName = "0.1.$runNumber"
     }
 
+    // The signing key comes from the SPOOL_KEYSTORE_BASE64 repo secret (decoded by CI to
+    // signing/spool.jks). Same key every build, so updates install over the old app.
+    val keystore = rootProject.file("signing/spool.jks")
+    val keystorePassword = System.getenv("SPOOL_KEYSTORE_PASSWORD") ?: "spoolspool"
     signingConfigs {
         create("shared") {
-            // Personal app: a fixed key committed to the (private) repo so every
-            // CI build installs over the previous one and keeps your progress.
-            storeFile = file("../signing/spool.jks")
-            storePassword = "spoolspool"
+            storeFile = keystore
+            storePassword = keystorePassword
             keyAlias = "spool"
-            keyPassword = "spoolspool"
+            keyPassword = keystorePassword
         }
     }
 
@@ -33,10 +35,10 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("shared")
+            if (keystore.exists()) signingConfig = signingConfigs.getByName("shared")
         }
         debug {
-            signingConfig = signingConfigs.getByName("shared")
+            if (keystore.exists()) signingConfig = signingConfigs.getByName("shared")
         }
     }
 

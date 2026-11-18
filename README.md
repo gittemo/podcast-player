@@ -17,3 +17,6 @@ Point Spool at your Seal folder (default `Download/Seal`).
 
 Every push to `main` builds an APK with GitHub Actions and publishes it under **Releases**.
 Open the latest release on your phone and install the APK. Updates install over the old version and keep your progress.
+
+CI signs the APK with a key stored in the repo secret `SPOOL_KEYSTORE_BASE64` (base64 of a PKCS12 keystore, alias `spool`).
+Keep a backup of that keystore: an APK signed with a different key can't update the installed app.
