@@ -58,7 +58,9 @@ fun HomeScreen(
     filter: Filter,
     onFilter: (Filter) -> Unit,
     bottomPadding: Dp,
+    artVersions: Map<String, Long>,
     onOpenChannel: (String) -> Unit,
+    onChannelLongPress: (Channel) -> Unit,
     onPlay: (Media) -> Unit,
     onLongPress: (Media) -> Unit,
     onSettings: () -> Unit,
@@ -161,7 +163,13 @@ fun HomeScreen(
                 }
                 items(channels, key = { "ch:" + it.name }) { ch ->
                     val unplayed = ch.items.count { m -> progress[m.key].let { it == null || (!it.finished && !it.inProgress) } }
-                    ChannelTile(ch, unplayed, onClick = { onOpenChannel(ch.name) })
+                    ChannelTile(
+                        channel = ch,
+                        unplayed = unplayed,
+                        artVersion = artVersions[ch.name],
+                        onClick = { onOpenChannel(ch.name) },
+                        onLongClick = { onChannelLongPress(ch) },
+                    )
                 }
                 if (loaded && channels.isEmpty()) {
                     item(span = { GridItemSpan(maxLineSpan) }) {

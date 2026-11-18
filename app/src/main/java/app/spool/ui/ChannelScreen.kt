@@ -1,9 +1,18 @@
 package app.spool.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import app.spool.data.Channel
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -35,7 +44,9 @@ fun ChannelScreen(
     items: List<Media>,
     progress: Map<String, Progress>,
     currentKey: String?,
+    artVersion: Long?,
     bottomPadding: Dp,
+    onChannelActions: () -> Unit,
     onBack: () -> Unit,
     onPlay: (Media) -> Unit,
     onLongPress: (Media) -> Unit,
@@ -51,19 +62,35 @@ fun ChannelScreen(
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
             title = {
-                Column {
-                    Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(
-                        "${items.size} items · ${sort.label}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (items.isNotEmpty()) {
+                        ChannelCover(
+                            Channel(name, items),
+                            artVersion,
+                            Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .clickable(onClick = onChannelActions),
+                        )
+                        Spacer(Modifier.width(12.dp))
+                    }
+                    Column {
+                        Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            "${items.size} items · ${sort.label}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             },
             navigationIcon = {
                 IconButton(onClick = onBack) { Icon(AppIcons.Back, contentDescription = "Back") }
             },
             actions = {
+                IconButton(onClick = onChannelActions) {
+                    Icon(AppIcons.Image, contentDescription = "Channel picture")
+                }
                 IconButton(onClick = { sort = Sort.entries[(sort.ordinal + 1) % Sort.entries.size] }) {
                     Icon(AppIcons.Sort, contentDescription = "Change sort order")
                 }

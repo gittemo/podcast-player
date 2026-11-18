@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -194,19 +195,43 @@ fun MediaCard(
     }
 }
 
-/** A channel on the home grid: square cover of its newest file, name and counts. */
+/** The channel's picture if it has one, else the cover of its newest file. */
+@Composable
+fun ChannelCover(channel: Channel, artVersion: Long?, modifier: Modifier = Modifier) {
+    if (artVersion == null) {
+        Thumb(channel.latest, modifier, placeholderLabel = channel.name)
+        return
+    }
+    val art = LocalContext.current.graph.channelArt
+    BoxWithConstraints(modifier) {
+        val px = with(LocalDensity.current) { maxWidth.roundToPx() }
+        val bitmap by produceState<ImageBitmap?>(initialValue = null, channel.name, artVersion, px) {
+            value = art.load(channel.name, px)
+        }
+        val bmp = bitmap
+        if (bmp != null) {
+            Image(bitmap = bmp, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        } else {
+            Thumb(channel.latest, Modifier.fillMaxSize(), placeholderLabel = channel.name)
+        }
+    }
+}
+
+/** A channel on the home grid: its picture (or newest cover), name and counts. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ChannelTile(
     channel: Channel,
     unplayed: Int,
+    artVersion: Long?,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val shape = RoundedCornerShape(20.dp)
-    Column(modifier.clip(shape).combinedClickable(onClick = onClick).padding(bottom = 6.dp)) {
+    Column(modifier.clip(shape).combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(bottom = 6.dp)) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(shape)) {
-            Thumb(channel.latest, Modifier.fillMaxSize(), placeholderLabel = channel.name)
+            ChannelCover(channel, artVersion, Modifier.fillMaxSize())
             if (unplayed > 0) {
                 Text(
                     text = unplayed.toString(),

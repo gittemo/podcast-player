@@ -2,6 +2,7 @@ package app.spool
 
 import android.app.Application
 import android.content.Context
+import app.spool.data.ChannelArt
 import app.spool.data.FileOps
 import app.spool.data.Library
 import app.spool.data.ProgressStore
@@ -28,6 +29,7 @@ class AppGraph(app: Application) {
     val progress = ProgressStore(app, scope)
     val library = Library(app, settings, scope)
     val thumbnails = Thumbnails(app)
+    val channelArt = ChannelArt(app, scope)
     val fileOps = FileOps(app, library, progress)
 }
 

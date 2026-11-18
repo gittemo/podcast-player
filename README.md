@@ -2,7 +2,8 @@
 
 A simple, fast, offline player for the audio and video you download with Seal (or anything else).
 
-- Opens straight to a grid of channels (one per subfolder, or by the artist tag yt-dlp writes)
+- Opens straight to a grid of channels, grouped by the artist tag yt-dlp writes (the channel name)
+- Channel pictures: fetched once from YouTube on request, or picked from your gallery
 - Remembers your position in every file
 - Search, filters (audio / video / unplayed / in progress), rename, delete
 - Audio and video in the same app: only the player screen changes
@@ -10,7 +11,8 @@ A simple, fast, offline player for the audio and video you download with Seal (o
 
 ## Seal setup
 
-Output template: `%(uploader)s/%(title).200B.%(ext)s`, and turn on "Embed metadata" and "Embed thumbnail".
+Output template: `%(title).200B.%(ext)s`, and turn on "Embed metadata" and "Embed thumbnail".
+Spool groups by the embedded metadata, so no subfolders are needed.
 Point Spool at your Seal folder (default `Download/Seal`).
 
 ## Install

@@ -36,12 +36,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.spool.data.Media
 import app.spool.data.Settings
 import app.spool.graph
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(root: String, itemCount: Int, bottomPadding: Dp, onBack: () -> Unit) {
+fun SettingsScreen(root: String, items: List<Media>, bottomPadding: Dp, onBack: () -> Unit) {
+    val itemCount = items.size
     val context = LocalContext.current
     val g = context.graph
     var folder by rememberSaveable(root) { mutableStateOf(root) }
@@ -60,8 +63,9 @@ fun SettingsScreen(root: String, itemCount: Int, bottomPadding: Dp, onBack: () -
         ) {
             Text("Library folder", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
-                "Everything inside this folder shows up, including subfolders. Each subfolder becomes a channel " +
-                    "(Seal's Audio and Video folders are skipped). Files without a subfolder are grouped by their artist tag.",
+                "Everything inside this folder shows up, including subfolders. Files are grouped into channels by " +
+                    "their artist tag, which Seal fills with the channel name when \"Embed metadata\" is on. " +
+                    "Files without one go to Unsorted.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -92,6 +96,25 @@ fun SettingsScreen(root: String, itemCount: Int, bottomPadding: Dp, onBack: () -
                 Icon(AppIcons.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("Rescan folder")
+            }
+
+            Spacer(Modifier.height(12.dp))
+            Text("Channel pictures", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                "Fetches each channel's picture from YouTube once, using the video link Seal saves in the files. " +
+                    "This is the only thing that uses the internet. You can also set a picture yourself by " +
+                    "long-pressing a channel.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            val artStatus by g.channelArt.status.collectAsStateWithLifecycle()
+            OutlinedButton(onClick = { g.channelArt.fetchMissing(items) }) {
+                Icon(AppIcons.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Get missing pictures")
+            }
+            artStatus?.let {
+                Text(it, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
             Spacer(Modifier.height(12.dp))

@@ -3,6 +3,9 @@ package app.spool.ui
 import android.os.Environment
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -50,6 +53,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.session.MediaController
+import app.spool.data.Channel
+import app.spool.data.Library
 import app.spool.data.Media
 import app.spool.graph
 import kotlinx.coroutines.launch
@@ -81,6 +86,7 @@ fun AppRoot(controller: MediaController?) {
     val loaded by g.library.loaded.collectAsStateWithLifecycle()
     val progress by g.progress.all.collectAsStateWithLifecycle()
     val root by g.settings.root.collectAsStateWithLifecycle()
+    val artVersions by g.channelArt.versions.collectAsStateWithLifecycle()
     val ps = rememberPlayerUiState(controller)
     val scope = rememberCoroutineScope()
 
@@ -91,6 +97,20 @@ fun AppRoot(controller: MediaController?) {
     var actionTarget by remember { mutableStateOf<Media?>(null) }
     var renameTarget by remember { mutableStateOf<Media?>(null) }
     var deleteTarget by remember { mutableStateOf<Media?>(null) }
+    var channelTarget by remember { mutableStateOf<Channel?>(null) }
+    var pickTarget by rememberSaveable { mutableStateOf<String?>(null) }
+
+    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        val name = pickTarget
+        pickTarget = null
+        if (uri != null && name != null) {
+            scope.launch {
+                g.channelArt.setFromUri(name, uri).onFailure {
+                    Toast.makeText(context, it.message ?: "Couldn't use that image", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
 
     val byKey = remember(items) { items.associateBy { it.key } }
     val currentKey = ps.mediaId
@@ -144,26 +164,35 @@ fun AppRoot(controller: MediaController?) {
                     filter = filter,
                     onFilter = { filter = it },
                     bottomPadding = bottomPadding,
+                    artVersions = artVersions,
                     onOpenChannel = { stack = stack + Screen.Channel(it) },
+                    onChannelLongPress = { channelTarget = it },
                     onPlay = ::play,
                     onLongPress = { actionTarget = it },
                     onSettings = { stack = stack + Screen.Settings },
                 )
 
-                is Screen.Channel -> ChannelScreen(
-                    name = screen.name,
-                    items = items.filter { it.group == screen.name },
-                    progress = progress,
-                    currentKey = currentKey,
-                    bottomPadding = bottomPadding,
-                    onBack = { stack = stack.dropLast(1) },
-                    onPlay = ::play,
-                    onLongPress = { actionTarget = it },
-                )
+                is Screen.Channel -> {
+                    val channelItems = items.filter { it.group == screen.name }
+                    ChannelScreen(
+                        name = screen.name,
+                        items = channelItems,
+                        progress = progress,
+                        currentKey = currentKey,
+                        artVersion = artVersions[screen.name],
+                        bottomPadding = bottomPadding,
+                        onChannelActions = {
+                            if (channelItems.isNotEmpty()) channelTarget = Channel(screen.name, channelItems)
+                        },
+                        onBack = { stack = stack.dropLast(1) },
+                        onPlay = ::play,
+                        onLongPress = { actionTarget = it },
+                    )
+                }
 
                 Screen.Settings -> SettingsScreen(
                     root = root,
-                    itemCount = items.size,
+                    items = items,
                     bottomPadding = bottomPadding,
                     onBack = { stack = stack.dropLast(1) },
                 )
@@ -289,6 +318,47 @@ fun AppRoot(controller: MediaController?) {
             },
             dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Cancel") } },
         )
+    }
+
+    // Channel picture actions (long-press a channel, or the picture button on its screen)
+    channelTarget?.let { ch ->
+        ModalBottomSheet(
+            onDismissRequest = { channelTarget = null },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
+            Column(Modifier.navigationBarsPadding().padding(bottom = 8.dp)) {
+                Text(
+                    ch.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                )
+                val itemColors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                if (ch.name != Library.UNSORTED) {
+                    ActionRow("Get picture from YouTube", AppIcons.CloudDownload, itemColors) {
+                        channelTarget = null
+                        Toast.makeText(context, "Getting picture…", Toast.LENGTH_SHORT).show()
+                        scope.launch {
+                            val result = g.channelArt.fetchFromYouTube(ch)
+                            val message = result.exceptionOrNull()?.message ?: "Picture updated"
+                            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+                ActionRow("Choose from gallery", AppIcons.Image, itemColors) {
+                    channelTarget = null
+                    pickTarget = ch.name
+                    pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                }
+                if (artVersions[ch.name] != null) {
+                    ActionRow("Remove picture", AppIcons.Delete, itemColors) {
+                        channelTarget = null
+                        g.channelArt.remove(ch.name)
+                    }
+                }
+            }
+        }
     }
 }
 

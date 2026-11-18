@@ -18,7 +18,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import androidx.core.content.edit
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -41,6 +45,8 @@ class Library(
         extraBufferCapacity = 1,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
+
+    private val artistCache = context.getSharedPreferences("artist_cache", Context.MODE_PRIVATE)
 
     private val audioUri: Uri = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
     private val videoUri: Uri = MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
@@ -76,10 +82,41 @@ class Library(
             return@withContext
         }
         val root = settings.root.value
-        val all = query(audioUri, isVideo = false, root) + query(videoUri, isVideo = true, root)
-        _items.value = all.sortedByDescending { it.dateAdded }
+        val all = (query(audioUri, isVideo = false, root) + query(videoUri, isVideo = true, root))
+            .map(::withCachedArtist)
+            .sortedByDescending { it.dateAdded }
+        _items.value = all
         _loaded.value = true
+        resolveMissingArtists(all)
     }
+
+    /**
+     * Android's media index doesn't read the artist tag from every format (some video
+     * containers). For those files, read the tag ourselves once and remember the answer.
+     */
+    private suspend fun resolveMissingArtists(items: List<Media>) {
+        val pending = items.filter { it.artist == null && !artistCache.contains(artistKey(it)) }
+        if (pending.isEmpty()) return
+        val found = HashMap<String, String>()
+        pending.forEachIndexed { i, m ->
+            currentCoroutineContext().ensureActive()
+            val artist = TagReader.read(context, m.uri)?.artist
+            artistCache.edit { putString(artistKey(m), artist ?: "") }
+            if (artist != null) found[m.key] = artist
+            if (found.isNotEmpty() && (i % 10 == 9 || i == pending.lastIndex)) {
+                val snapshot = HashMap(found)
+                _items.update { list -> list.map { item -> snapshot[item.key]?.let { item.copy(artist = it, group = it) } ?: item } }
+            }
+        }
+    }
+
+    private fun withCachedArtist(m: Media): Media {
+        if (m.artist != null) return m
+        val cached = artistCache.getString(artistKey(m), null)?.takeIf { it.isNotEmpty() } ?: return m
+        return m.copy(artist = cached, group = cached)
+    }
+
+    private fun artistKey(m: Media) = "${m.key}|${m.sizeBytes}"
 
     private fun query(collection: Uri, isVideo: Boolean, root: String): List<Media> {
         val projection = arrayOf(
@@ -117,7 +154,7 @@ class Library(
                         folder = rel,
                         fileName = name,
                         title = Names.displayTitle(name),
-                        group = groupFor(rel, root, artist),
+                        group = artist ?: UNSORTED,
                         artist = artist,
                         durationMs = c.getLong(iDur),
                         sizeBytes = c.getLong(iSize),
@@ -130,18 +167,6 @@ class Library(
             // Access was revoked; the UI will show the permission screen.
         }
         return out
-    }
-
-    /**
-     * Channel name: the first folder under the library root (skipping Seal's "Audio"/"Video"
-     * folders), else the artist tag (yt-dlp puts the channel there), else "Unsorted".
-     */
-    private fun groupFor(rel: String, root: String, artist: String?): String {
-        val trimmed = rel.trim('/')
-        val sub = if (trimmed.length > root.length) trimmed.substring(root.length).trim('/') else ""
-        val segments = sub.split('/').filter { it.isNotBlank() }.toMutableList()
-        if (segments.isNotEmpty() && segments[0].lowercase() in typeFolders) segments.removeAt(0)
-        return segments.firstOrNull() ?: artist ?: "Unsorted"
     }
 
     /** Ask Android to index files in the library folder that MediaStore hasn't seen yet. */
@@ -163,7 +188,8 @@ class Library(
     }
 
     companion object {
-        private val typeFolders = setOf("audio", "video")
+        /** Channel name for files without an artist tag. */
+        const val UNSORTED = "Unsorted"
         private val mediaExtensions = setOf(
             "opus", "ogg", "oga", "m4a", "mp3", "aac", "flac", "wav",
             "webm", "mp4", "m4v", "mkv", "mov", "3gp",
