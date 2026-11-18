@@ -179,11 +179,7 @@ fun AppRoot(controller: MediaController?) {
                         items = channelItems,
                         progress = progress,
                         currentKey = currentKey,
-                        artVersion = artVersions[screen.name],
                         bottomPadding = bottomPadding,
-                        onChannelActions = {
-                            if (channelItems.isNotEmpty()) channelTarget = Channel(screen.name, channelItems)
-                        },
                         onBack = { stack = stack.dropLast(1) },
                         onPlay = ::play,
                         onLongPress = { actionTarget = it },
@@ -320,7 +316,7 @@ fun AppRoot(controller: MediaController?) {
         )
     }
 
-    // Channel picture actions (long-press a channel, or the picture button on its screen)
+    // Channel picture actions (long-press a channel on the home screen)
     channelTarget?.let { ch ->
         ModalBottomSheet(
             onDismissRequest = { channelTarget = null },

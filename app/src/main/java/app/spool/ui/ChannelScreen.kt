@@ -1,18 +1,10 @@
 package app.spool.ui
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.draw.clip
-import app.spool.data.Channel
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -23,20 +15,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.spool.data.Media
 import app.spool.data.Progress
 
-private enum class Sort(val label: String) { Newest("Newest first"), Oldest("Oldest first"), Title("A–Z") }
-
+/** One channel's files, newest first. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChannelScreen(
@@ -44,56 +30,27 @@ fun ChannelScreen(
     items: List<Media>,
     progress: Map<String, Progress>,
     currentKey: String?,
-    artVersion: Long?,
     bottomPadding: Dp,
-    onChannelActions: () -> Unit,
     onBack: () -> Unit,
     onPlay: (Media) -> Unit,
     onLongPress: (Media) -> Unit,
 ) {
-    var sort by rememberSaveable { mutableStateOf(Sort.Newest) }
-    val sorted = remember(items, sort) {
-        when (sort) {
-            Sort.Newest -> items.sortedByDescending { it.dateAdded }
-            Sort.Oldest -> items.sortedBy { it.dateAdded }
-            Sort.Title -> items.sortedBy { it.title.lowercase() }
-        }
-    }
+    val sorted = remember(items) { items.sortedByDescending { it.dateAdded } }
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
             title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (items.isNotEmpty()) {
-                        ChannelCover(
-                            Channel(name, items),
-                            artVersion,
-                            Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .clickable(onClick = onChannelActions),
-                        )
-                        Spacer(Modifier.width(12.dp))
-                    }
-                    Column {
-                        Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(
-                            "${items.size} items · ${sort.label}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                Column {
+                    // One line that scrolls when it's too long, so the whole name is readable.
+                    Text(name, maxLines = 1, modifier = Modifier.basicMarquee())
+                    Text(
+                        if (items.size == 1) "1 item" else "${items.size} items",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             },
             navigationIcon = {
                 IconButton(onClick = onBack) { Icon(AppIcons.Back, contentDescription = "Back") }
-            },
-            actions = {
-                IconButton(onClick = onChannelActions) {
-                    Icon(AppIcons.Image, contentDescription = "Channel picture")
-                }
-                IconButton(onClick = { sort = Sort.entries[(sort.ordinal + 1) % Sort.entries.size] }) {
-                    Icon(AppIcons.Sort, contentDescription = "Change sort order")
-                }
             },
         )
         LazyVerticalGrid(
