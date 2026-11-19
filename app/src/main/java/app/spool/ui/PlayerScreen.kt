@@ -52,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
@@ -65,6 +66,13 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.compose.ContentFrame
 import androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW
+import androidx.media3.ui.compose.state.PlaybackSpeedState
+import androidx.media3.ui.compose.state.rememberPlayPauseButtonState
+import androidx.media3.ui.compose.state.rememberPlaybackSpeedState
+import androidx.media3.ui.compose.state.rememberPresentationState
+import androidx.media3.ui.compose.state.rememberProgressStateWithTickInterval
+import androidx.media3.ui.compose.state.rememberSeekBackButtonState
+import androidx.media3.ui.compose.state.rememberSeekForwardButtonState
 import app.spool.data.Media
 import app.spool.data.TagReader
 import kotlinx.coroutines.Dispatchers
@@ -83,21 +91,21 @@ private fun Float.speedLabel(): String =
 @Composable
 fun PlayerScreen(
     media: Media,
-    player: Player?,
-    state: PlayerUiState,
+    player: Player,
     onClose: () -> Unit,
 ) {
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-    if (media.isVideo && landscape && player != null) {
-        FullscreenVideo(media, player, state)
+    if (media.isVideo && landscape) {
+        FullscreenVideo(media, player)
     } else {
-        PortraitPlayer(media, player, state, onClose)
+        PortraitPlayer(media, player, onClose)
     }
 }
 
 @Composable
-private fun PortraitPlayer(media: Media, player: Player?, state: PlayerUiState, onClose: () -> Unit) {
+private fun PortraitPlayer(media: Media, player: Player, onClose: () -> Unit) {
     var showInfo by rememberSaveable(media.key) { mutableStateOf(false) }
+    val speed = rememberPlaybackSpeedState(player)
     Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxSize()) {
         Column(
             Modifier
@@ -110,7 +118,7 @@ private fun PortraitPlayer(media: Media, player: Player?, state: PlayerUiState, 
                 IconButton(onClick = onClose) { Icon(AppIcons.Down, contentDescription = "Close player") }
                 Spacer(Modifier.weight(1f))
                 IconButton(onClick = { showInfo = true }) { Icon(AppIcons.Info, contentDescription = "File details") }
-                SpeedButton(player, state)
+                SpeedButton(speed)
             }
 
             // Everything below is centred as a group; the picture takes whatever height is
@@ -125,8 +133,13 @@ private fun PortraitPlayer(media: Media, player: Player?, state: PlayerUiState, 
                     Modifier.weight(1f, fill = false).fillMaxWidth().padding(vertical = 8.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (media.isVideo && player != null) {
-                        val aspect = if (state.videoAspect > 0f) state.videoAspect else 16f / 9f
+                    if (media.isVideo) {
+                        // null until the first frame's size is known
+                        val video = rememberPresentationState(player).videoSizeDp
+                        val aspect = video
+                            ?.takeIf { it.isSpecified && it.width > 0f && it.height > 0f }
+                            ?.let { it.width / it.height }
+                            ?: (16f / 9f)
                         Box(Modifier.aspectRatio(aspect).clip(shape).background(Color.Black)) {
                             // TextureView: a SurfaceView ignores the rounded clip.
                             ContentFrame(
@@ -155,10 +168,10 @@ private fun PortraitPlayer(media: Media, player: Player?, state: PlayerUiState, 
                 )
 
                 Spacer(Modifier.height(16.dp))
-                SeekBar(player, state)
+                SeekBar(player, speed.playbackSpeed)
 
                 Spacer(Modifier.height(8.dp))
-                Controls(player, state)
+                Controls(player)
                 Spacer(Modifier.height(16.dp))
             }
         }
@@ -167,35 +180,41 @@ private fun PortraitPlayer(media: Media, player: Player?, state: PlayerUiState, 
 }
 
 @Composable
-private fun SpeedButton(player: Player?, state: PlayerUiState) {
-    TextButton(onClick = {
-        val i = speeds.indexOfFirst { it >= state.speed - 0.01f }.let { if (it < 0) 0 else it }
-        player?.setPlaybackSpeed(speeds[(i + 1) % speeds.size])
-    }) {
-        Text(state.speed.speedLabel(), style = MaterialTheme.typography.titleMedium)
+private fun SpeedButton(speed: PlaybackSpeedState) {
+    TextButton(
+        enabled = speed.isEnabled,
+        onClick = {
+            val i = speeds.indexOfFirst { it >= speed.playbackSpeed - 0.01f }.let { if (it < 0) 0 else it }
+            speed.updatePlaybackSpeed(speeds[(i + 1) % speeds.size])
+        },
+    ) {
+        Text(speed.playbackSpeed.speedLabel(), style = MaterialTheme.typography.titleMedium)
     }
 }
 
 @Composable
-private fun SeekBar(player: Player?, state: PlayerUiState, light: Boolean = false) {
+private fun SeekBar(player: Player, speed: Float, light: Boolean = false) {
+    // Updates once per second of playback, so the times flip on whole seconds.
+    val progress = rememberProgressStateWithTickInterval(player, 1_000L)
     var dragging by remember { mutableStateOf<Float?>(null) }
-    val duration = state.durationMs.coerceAtLeast(1L)
-    val shown = dragging ?: (state.positionMs.toFloat() / duration).coerceIn(0f, 1f)
+    val known = progress.durationMs > 0
+    val duration = if (known) progress.durationMs else 1L
+    val shown = dragging ?: (progress.currentPositionMs.toFloat() / duration).coerceIn(0f, 1f)
     val textColor = if (light) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
     Column(Modifier.fillMaxWidth()) {
         Slider(
             value = shown,
             onValueChange = { dragging = it },
             onValueChangeFinished = {
-                dragging?.let { player?.seekTo((it * duration).toLong()) }
+                dragging?.let { player.seekTo((it * duration).toLong()) }
                 dragging = null
             },
-            enabled = state.durationMs > 0,
+            enabled = known,
         )
         Row(Modifier.fillMaxWidth()) {
             Text(formatDuration((shown * duration).toLong()), style = MaterialTheme.typography.labelMedium, color = textColor)
             Spacer(Modifier.weight(1f))
-            val remaining = ((1f - shown) * duration / state.speed.coerceAtLeast(0.1f)).toLong()
+            val remaining = ((1f - shown) * duration / speed.coerceAtLeast(0.1f)).toLong()
             Text("-" + formatDuration(remaining), style = MaterialTheme.typography.labelMedium, color = textColor)
         }
     }
@@ -203,37 +222,50 @@ private fun SeekBar(player: Player?, state: PlayerUiState, light: Boolean = fals
 
 /** Back 15 s · play/pause · forward 30 s. [overlay] is for white controls on top of video. */
 @Composable
-private fun Controls(player: Player?, state: PlayerUiState, overlay: Boolean = false) {
+private fun Controls(player: Player, overlay: Boolean = false) {
+    val playPause = rememberPlayPauseButtonState(player)
+    val back = rememberSeekBackButtonState(player)
+    val forward = rememberSeekForwardButtonState(player)
     Row(
         horizontalArrangement = Arrangement.spacedBy(24.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SkipButton("15", AppIcons.Rewind, "Back 15 seconds", overlay) { player?.seekBack() }
-        val icon = if (state.showPlay) AppIcons.Play else AppIcons.Pause
-        val description = if (state.showPlay) "Play" else "Pause"
+        val backSeconds = back.seekBackAmountMs / 1000
+        SkipButton("$backSeconds", AppIcons.Rewind, "Back $backSeconds seconds", overlay, back.isEnabled, back::onClick)
+        val icon = if (playPause.showPlay) AppIcons.Play else AppIcons.Pause
+        val description = if (playPause.showPlay) "Play" else "Pause"
         if (overlay) {
             IconButton(
-                onClick = { player?.togglePlay() },
+                onClick = playPause::onClick,
+                enabled = playPause.isEnabled,
                 colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White),
                 modifier = Modifier.size(64.dp),
             ) { Icon(icon, contentDescription = description, modifier = Modifier.size(40.dp)) }
         } else {
-            FilledIconButton(onClick = { player?.togglePlay() }, modifier = Modifier.size(64.dp)) {
+            FilledIconButton(onClick = playPause::onClick, enabled = playPause.isEnabled, modifier = Modifier.size(64.dp)) {
                 Icon(icon, contentDescription = description, modifier = Modifier.size(32.dp))
             }
         }
-        SkipButton("30", AppIcons.Forward, "Forward 30 seconds", overlay) { player?.seekForward() }
+        val forwardSeconds = forward.seekForwardAmountMs / 1000
+        SkipButton("$forwardSeconds", AppIcons.Forward, "Forward $forwardSeconds seconds", overlay, forward.isEnabled, forward::onClick)
     }
 }
 
 @Composable
-private fun SkipButton(label: String, icon: ImageVector, description: String, overlay: Boolean, onClick: () -> Unit) {
+private fun SkipButton(
+    label: String,
+    icon: ImageVector,
+    description: String,
+    overlay: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
     val colors = if (overlay) {
         IconButtonDefaults.iconButtonColors(contentColor = Color.White)
     } else {
         IconButtonDefaults.iconButtonColors()
     }
-    IconButton(onClick = onClick, colors = colors, modifier = Modifier.size(56.dp)) {
+    IconButton(onClick = onClick, enabled = enabled, colors = colors, modifier = Modifier.size(56.dp)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(icon, contentDescription = description)
             Text(label, style = MaterialTheme.typography.labelSmall)
@@ -243,7 +275,7 @@ private fun SkipButton(label: String, icon: ImageVector, description: String, ov
 
 /** Landscape video: edge to edge, tap to show or hide the controls. */
 @Composable
-private fun FullscreenVideo(media: Media, player: Player, state: PlayerUiState) {
+private fun FullscreenVideo(media: Media, player: Player) {
     val activity = LocalActivity.current
     DisposableEffect(activity) {
         val window = activity?.window
@@ -252,9 +284,11 @@ private fun FullscreenVideo(media: Media, player: Player, state: PlayerUiState) 
         controller?.hide(WindowInsetsCompat.Type.systemBars())
         onDispose { controller?.show(WindowInsetsCompat.Type.systemBars()) }
     }
+    val playing = !rememberPlayPauseButtonState(player).showPlay
+    val speed = rememberPlaybackSpeedState(player)
     var controlsVisible by remember { mutableStateOf(true) }
-    LaunchedEffect(controlsVisible, state.isPlaying) {
-        if (controlsVisible && state.isPlaying) {
+    LaunchedEffect(controlsVisible, playing) {
+        if (controlsVisible && playing) {
             delay(3_000)
             controlsVisible = false
         }
@@ -280,10 +314,10 @@ private fun FullscreenVideo(media: Media, player: Player, state: PlayerUiState) 
                     modifier = Modifier.align(Alignment.TopStart).safeDrawingPadding().padding(24.dp),
                 )
                 Box(Modifier.align(Alignment.Center)) {
-                    Controls(player, state, overlay = true)
+                    Controls(player, overlay = true)
                 }
                 Box(Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(horizontal = 32.dp, vertical = 16.dp)) {
-                    SeekBar(player, state, light = true)
+                    SeekBar(player, speed.playbackSpeed, light = true)
                 }
             }
         }

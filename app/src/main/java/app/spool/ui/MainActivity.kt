@@ -9,7 +9,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.Lifecycle
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import app.spool.playback.PlaybackService
@@ -19,10 +18,13 @@ import com.google.common.util.concurrent.ListenableFuture
 class MainActivity : ComponentActivity() {
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller by mutableStateOf<MediaController?>(null)
+    private var alive = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        alive = true
+        connect()
         setContent {
             SpoolTheme {
                 AppRoot(controller = controller)
@@ -30,24 +32,24 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onStart() {
-        super.onStart()
-        connect()
-    }
-
-    override fun onStop() {
+    override fun onDestroy() {
+        alive = false
         disconnect()
-        super.onStop()
+        super.onDestroy()
     }
 
-    // Media3's recommended lifecycle: connect while the UI is visible, release when it isn't.
+    /**
+     * One controller for the activity's whole life, rather than one per onStart/onStop.
+     * The UI's Media3 state holders observe this controller; swapping it on every return to
+     * the app would briefly show a released controller's empty state (position 0:00).
+     */
     private fun connect() {
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         val future = MediaController.Builder(this, token)
             .setListener(object : MediaController.Listener {
-                // The session went away (e.g. the service was killed): reconnect if still visible.
+                // The session went away (e.g. the service was killed): connect again.
                 override fun onDisconnected(controller: MediaController) {
-                    if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                    if (alive && controller === this@MainActivity.controller) {
                         disconnect()
                         connect()
                     }

@@ -1,3 +1,5 @@
+@file:androidx.annotation.OptIn(UnstableApi::class)
+
 package app.spool.ui
 
 import android.os.Environment
@@ -19,6 +21,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -52,7 +58,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
+import androidx.media3.ui.compose.state.rememberCurrentMediaItemState
 import app.spool.data.Channel
 import app.spool.data.Library
 import app.spool.data.Media
@@ -77,8 +85,10 @@ fun AppRoot(controller: MediaController?) {
         if (now != hasAccess) hasAccess = now
         if (now) g.library.refresh(scanDisk = true)
     }
+    // Landscape: keep content clear of a side navigation bar and the camera cutout.
+    val sideInsets = Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
     if (!hasAccess) {
-        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { PermissionScreen() }
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).then(sideInsets)) { PermissionScreen() }
         return
     }
 
@@ -87,10 +97,10 @@ fun AppRoot(controller: MediaController?) {
     val progress by g.progress.all.collectAsStateWithLifecycle()
     val root by g.settings.root.collectAsStateWithLifecycle()
     val artVersions by g.channelArt.versions.collectAsStateWithLifecycle()
-    val ps = rememberPlayerUiState(controller)
     val scope = rememberCoroutineScope()
-    // The activity builds a new controller on every onStart; callbacks always use the latest.
+    // Callbacks always use the latest controller (it changes if the session reconnects).
     val currentController by rememberUpdatedState(controller)
+    val player = controller
 
     var stack by remember { mutableStateOf<List<Screen>>(listOf(Screen.Home)) }
     var playerOpen by rememberSaveable { mutableStateOf(false) }
@@ -115,18 +125,11 @@ fun AppRoot(controller: MediaController?) {
     }
 
     val byKey = remember(items) { items.associateBy { it.key } }
-    val currentKey = ps.mediaId
+    val currentKey = player?.let { rememberCurrentMediaItemState(it).mediaItem?.mediaId }
     val current = currentKey?.let { byKey[it] }
     // When nothing is loaded in the player, offer the last unfinished file in the mini player.
     val lastPlayed = remember(byKey, progress, currentKey) {
-        if (currentKey != null) {
-            null
-        } else {
-            progress.entries
-                .filter { !it.value.finished && byKey.containsKey(it.key) }
-                .maxByOrNull { it.value.lastPlayed }
-                ?.let { byKey[it.key] }
-        }
+        if (currentKey != null) null else g.progress.lastUnfinished(byKey)
     }
 
     fun play(m: Media) {
@@ -153,6 +156,7 @@ fun AppRoot(controller: MediaController?) {
             targetState = stack.last(),
             transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
             label = "screens",
+            modifier = sideInsets,
         ) { screen ->
             when (screen) {
                 Screen.Home -> HomeScreen(
@@ -175,7 +179,7 @@ fun AppRoot(controller: MediaController?) {
                 )
 
                 is Screen.Channel -> {
-                    val channelItems = items.filter { it.group == screen.name }
+                    val channelItems = remember(items, screen.name) { items.filter { it.group == screen.name } }
                     ChannelScreen(
                         name = screen.name,
                         items = channelItems,
@@ -201,12 +205,12 @@ fun AppRoot(controller: MediaController?) {
             val isCurrent = current != null
             MiniPlayer(
                 media = miniMedia,
-                state = ps,
+                player = player,
                 isCurrent = isCurrent,
                 savedProgress = progress[miniMedia.key],
                 onOpen = { if (isCurrent) playerOpen = true else play(miniMedia) },
-                onToggle = { if (isCurrent) currentController?.togglePlay() else play(miniMedia) },
-                modifier = Modifier.align(Alignment.BottomCenter),
+                onPlay = { play(miniMedia) },
+                modifier = Modifier.align(Alignment.BottomCenter).then(sideInsets),
             )
         }
 
@@ -215,9 +219,10 @@ fun AppRoot(controller: MediaController?) {
             enter = slideInVertically { it } + fadeIn(),
             exit = slideOutVertically { it } + fadeOut(),
         ) {
+            // `current` comes from the player's current item, so a player exists whenever it does.
             val m = current
             if (m != null) {
-                PlayerScreen(media = m, player = controller, state = ps, onClose = { playerOpen = false })
+                PlayerScreen(media = m, player = player, onClose = { playerOpen = false })
             }
         }
     }

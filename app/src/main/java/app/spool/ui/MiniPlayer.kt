@@ -1,3 +1,5 @@
+@file:androidx.annotation.OptIn(UnstableApi::class)
+
 package app.spool.ui
 
 import androidx.compose.foundation.basicMarquee
@@ -24,19 +26,30 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.ui.compose.state.rememberPlayPauseButtonState
+import androidx.media3.ui.compose.state.rememberProgressStateWithTickInterval
 import app.spool.data.Media
 import app.spool.data.Progress
 
+/**
+ * The bar above the bottom edge. When [isCurrent], it shows and controls what [player] is
+ * playing; otherwise it offers [media] (the last unfinished file) and [onPlay] starts it.
+ */
 @Composable
 fun MiniPlayer(
     media: Media,
-    state: PlayerUiState,
+    player: Player?,
     isCurrent: Boolean,
     savedProgress: Progress?,
     onOpen: () -> Unit,
-    onToggle: () -> Unit,
+    onPlay: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val live = player?.takeIf { isCurrent }
+    val playPause = live?.let { rememberPlayPauseButtonState(it) }
+    val progress = live?.let { rememberProgressStateWithTickInterval(it, 1_000L) }
     val shape = RoundedCornerShape(24.dp)
     Surface(
         shape = shape,
@@ -78,18 +91,21 @@ fun MiniPlayer(
                     )
                 }
                 Spacer(Modifier.width(8.dp))
-                val playing = isCurrent && !state.showPlay
-                FilledIconButton(onClick = onToggle, modifier = Modifier.size(48.dp)) {
+                val playing = playPause?.showPlay == false
+                FilledIconButton(
+                    onClick = { if (playPause != null) playPause.onClick() else onPlay() },
+                    modifier = Modifier.size(48.dp),
+                ) {
                     Icon(
                         if (playing) AppIcons.Pause else AppIcons.Play,
                         contentDescription = if (playing) "Pause" else "Play",
                     )
                 }
             }
-            val fraction = if (isCurrent) {
-                if (state.durationMs > 0) state.positionMs.toFloat() / state.durationMs else 0f
-            } else {
-                savedProgress?.fraction ?: 0f
+            val fraction = when {
+                progress == null -> savedProgress?.fraction ?: 0f
+                progress.durationMs > 0 -> progress.currentPositionMs.toFloat() / progress.durationMs
+                else -> 0f
             }
             Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 8.dp)) {
                 ProgressLine(fraction, Modifier.fillMaxWidth().clip(RoundedCornerShape(2.dp)))
