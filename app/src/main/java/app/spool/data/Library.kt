@@ -49,12 +49,12 @@ class Library(
     // v2: Matroska (.webm/.mkv) tags are read now. The old cache remembered "no artist" for
     // those files, so start over once.
     private val artistCache = context.getSharedPreferences("artist_cache_v2", Context.MODE_PRIVATE)
-        .also { context.deleteSharedPreferences("artist_cache") }
 
     private val audioUri: Uri = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
     private val videoUri: Uri = MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
 
     init {
+        scope.launch(Dispatchers.IO) { context.deleteSharedPreferences("artist_cache") }
         scope.launch {
             requests.collectLatest { scanDisk ->
                 delay(200) // coalesce bursts of change notifications

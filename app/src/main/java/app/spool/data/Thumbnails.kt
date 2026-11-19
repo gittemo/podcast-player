@@ -22,7 +22,7 @@ class Thumbnails(private val context: Context) {
     }
     private val missing: MutableSet<String> = Collections.synchronizedSet(HashSet())
     private val io = Dispatchers.IO.limitedParallelism(4)
-    private val diskDir = File(context.cacheDir, "covers")
+    private val diskDir by lazy { File(context.cacheDir, "covers") } // getCacheDir() can touch the disk
 
     fun cached(media: Media, widthPx: Int): ImageBitmap? = cache.get(key(media, widthPx))
 

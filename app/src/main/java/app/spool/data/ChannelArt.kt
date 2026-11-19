@@ -6,6 +6,7 @@ import android.util.LruCache
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.content.edit
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -29,15 +30,28 @@ import java.security.MessageDigest
  * and only when the user asks for it.
  */
 class ChannelArt(private val context: Context, private val scope: CoroutineScope) {
-    private val dir = File(context.filesDir, "channel_art").apply { mkdirs() }
+    // Lazy: getFilesDir() can touch the disk. Images.saveJpeg creates the folder when needed.
+    private val dir by lazy { File(context.filesDir, "channel_art") }
     private val prefs = context.getSharedPreferences("channel_art", Context.MODE_PRIVATE)
     private val cache = object : LruCache<String, ImageBitmap>(16 * 1024 * 1024) {
         override fun sizeOf(key: String, value: ImageBitmap): Int = value.width * value.height * 4
     }
 
     /** Channel name -> version (changes whenever its picture changes). */
-    private val _versions = MutableStateFlow(readVersions())
+    private val _versions = MutableStateFlow<Map<String, Long>>(emptyMap())
     val versions: StateFlow<Map<String, Long>> = _versions.asStateFlow()
+
+    // Read the saved pictures off the main thread; bulk fetches wait for it so they don't
+    // mistake "not read yet" for "missing".
+    private val versionsLoaded = CompletableDeferred<Unit>()
+
+    init {
+        scope.launch(Dispatchers.IO) {
+            val saved = readVersions()
+            _versions.update { saved + it } // pictures set before loading finished win
+            versionsLoaded.complete(Unit)
+        }
+    }
 
     /** Progress text for "get missing pictures", or null when idle. */
     private val _status = MutableStateFlow<String?>(null)
@@ -98,6 +112,7 @@ class ChannelArt(private val context: Context, private val scope: CoroutineScope
         }
         bulkIsAuto = false
         bulkJob = scope.launch {
+            versionsLoaded.await()
             val missing = missingChannels(items, respectBackoff = false)
             if (missing.isEmpty()) {
                 _status.value = "Every channel already has a picture"
@@ -121,6 +136,7 @@ class ChannelArt(private val context: Context, private val scope: CoroutineScope
         if (bulkJob?.isActive == true) return
         bulkIsAuto = true
         bulkJob = scope.launch {
+            versionsLoaded.await()
             for (channel in missingChannels(items, respectBackoff = true)) fetchAndRecord(channel)
         }
     }
