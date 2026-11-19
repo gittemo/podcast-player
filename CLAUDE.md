@@ -61,9 +61,13 @@ No sources jars in the Gradle cache: to check a Media3 API, unzip `classes.jar` 
   The session wraps the player in `SpoolPlayer` (ForwardingSimpleBasePlayer): next/previous from headphones/Bluetooth/car = forward/back.
   Needed because the queue is one item and Media3 hides skip actions when SLOT_BACK/SLOT_FORWARD buttons are set.
   `onPlaybackResumption` + `MediaButtonReceiver` in the manifest: headset "play" resumes the last unfinished file.
-- `ui/MainActivity`: MediaController is built in onStart and released in onStop (reconnects if the session drops it).
-  `AppRoot` callbacks read `currentController` (rememberUpdatedState) so they always use the latest instance.
-- Play/pause buttons use Media3's `Util.shouldShowPlayButton` / `Util.handlePlayPauseButtonAction`, not `isPlaying`.
+- `ui/MainActivity`: one MediaController for the activity's whole life (onCreate..onDestroy, reconnects if the session drops it).
+  Deliberately not onStart/onStop: the UI's Media3 state holders would briefly show a released controller's empty state.
+- Player UI state comes from media3-ui-compose state holders (`rememberPlayPauseButtonState`, `rememberProgressStateWithTickInterval`,
+  `rememberPlaybackSpeedState`, seek back/forward states, `rememberCurrentMediaItemState`, `rememberPresentationState`); no polling of our own.
+- Home lists/counts are keyed on `PlayStatus` (via `Map<String, Progress>.statuses()`), not on the progress map, which changes every 5 s while playing.
+- No disk work in constructors that run in `Application.onCreate` (ChannelArt/Thumbnails/Library load lazily or on IO).
+- Screens and the mini player pad for horizontal `safeDrawing` insets (landscape side nav bar, cutout).
 - Media3's `@UnstableApi` needs `@file:androidx.annotation.OptIn(UnstableApi::class)`; Kotlin's `OptIn` has no effect on it.
 - UI (Compose, Material You dynamic color): Home (search, filter chips, Continue row, channel grid), Channel (16:9 grid, newest first),
   Player (same screen for audio and video; landscape video goes fullscreen; info button opens a sheet with all file details and tags),
