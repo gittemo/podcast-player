@@ -28,21 +28,24 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.spool.data.Channel
 import app.spool.data.Media
+import app.spool.data.PlayStatus
 import app.spool.data.Progress
+import app.spool.data.statuses
 
-enum class Filter(val label: String) {
+enum class Filter(val label: String, val usesStatus: Boolean = false) {
     All("All"),
     Audio("Audio"),
     Video("Video"),
-    Unplayed("Unplayed"),
-    InProgress("In progress");
+    Unplayed("Unplayed", usesStatus = true),
+    InProgress("In progress", usesStatus = true);
 
-    fun matches(media: Media, progress: Progress?): Boolean = when (this) {
+    /** [status] is null for files that were never played. */
+    fun matches(media: Media, status: PlayStatus?): Boolean = when (this) {
         All -> true
         Audio -> !media.isVideo
         Video -> media.isVideo
-        Unplayed -> progress == null || (!progress.finished && !progress.inProgress)
-        InProgress -> progress?.inProgress == true
+        Unplayed -> status == null || status == PlayStatus.New
+        InProgress -> status == PlayStatus.InProgress
     }
 }
 
@@ -65,16 +68,29 @@ fun HomeScreen(
     onLongPress: (Media) -> Unit,
     onSettings: () -> Unit,
 ) {
-    val filtered = remember(items, progress, filter) { items.filter { filter.matches(it, progress[it.key]) } }
+    // `progress` changes every time a position is saved (every 5 s while playing). The small
+    // derived values below are recomputed then, but `remember` compares keys by value, so the
+    // expensive lists only rebuild when a file's status or the Continue order actually changes.
+    val statuses = remember(progress) { progress.statuses() }
+    val filtered = remember(items, filter, if (filter.usesStatus) statuses else null) {
+        items.filter { filter.matches(it, statuses[it.key]) }
+    }
     val channels = remember(filtered) {
         filtered.groupBy { it.group }
             .map { (name, list) -> Channel(name, list) }
             .sortedByDescending { it.latest.dateAdded }
     }
-    val continueItems = remember(filtered, progress) {
-        filtered.filter { progress[it.key]?.inProgress == true }
-            .sortedByDescending { progress[it.key]?.lastPlayed ?: 0L }
-            .take(12)
+    val unplayedCounts = remember(channels, statuses) {
+        channels.associate { ch ->
+            ch.name to ch.items.count { m -> statuses[m.key].let { it == null || it == PlayStatus.New } }
+        }
+    }
+    val continueOrder = remember(progress) {
+        progress.entries.filter { it.value.inProgress }.sortedByDescending { it.value.lastPlayed }.map { it.key }
+    }
+    val continueItems = remember(filtered, continueOrder) {
+        val allowed = filtered.associateBy { it.key }
+        continueOrder.mapNotNull { allowed[it] }.take(12)
     }
     val results = remember(filtered, query) {
         val q = query.trim()
@@ -162,10 +178,9 @@ fun HomeScreen(
                     }
                 }
                 items(channels, key = { "ch:" + it.name }) { ch ->
-                    val unplayed = ch.items.count { m -> progress[m.key].let { it == null || (!it.finished && !it.inProgress) } }
                     ChannelTile(
                         channel = ch,
-                        unplayed = unplayed,
+                        unplayed = unplayedCounts[ch.name] ?: 0,
                         artVersion = artVersions[ch.name],
                         onClick = { onOpenChannel(ch.name) },
                         onLongClick = { onChannelLongPress(ch) },

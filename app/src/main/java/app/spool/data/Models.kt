@@ -40,7 +40,23 @@ data class Progress(
         }
 
     val inProgress: Boolean get() = !finished && positionMs > 5_000
+
+    val status: PlayStatus
+        get() = when {
+            finished -> PlayStatus.Finished
+            inProgress -> PlayStatus.InProgress
+            else -> PlayStatus.New
+        }
 }
+
+/**
+ * Coarse play state. Unlike [Progress], it doesn't change every time a position is saved,
+ * so lists and counts keyed on it only recompute when a file starts, finishes or is reset.
+ */
+enum class PlayStatus { New, InProgress, Finished }
+
+/** Status of every file that has saved progress; files missing from the map are [PlayStatus.New]. */
+fun Map<String, Progress>.statuses(): Map<String, PlayStatus> = mapValues { it.value.status }
 
 object Names {
     private val idSuffix = Regex("""\s*\[[A-Za-z0-9_-]{5,}\]$""")
